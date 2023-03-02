@@ -13,6 +13,13 @@ import (
 	"syscall"
 )
 
+type Request struct {
+	Bearer      string `json:"bearer"`
+	ContentType string `json:"content-type"`
+	Endpoint    string `json:"endpoint"`
+	Method      string `json:"method"`
+}
+
 type Message struct {
 	Content string `json:"content"`
 	Role    string `json:"role"`
@@ -21,13 +28,6 @@ type Message struct {
 type Data struct {
 	Messages []Message `json:"messages"`
 	Model    string    `json:"model"`
-}
-
-type Request struct {
-	Bearer      string `json:"bearer"`
-	ContentType string `json:"content-type"`
-	Endpoint    string `json:"endpoint"`
-	Method      string `json:"method"`
 }
 
 type ChatGPTResponse struct {
@@ -61,12 +61,9 @@ var (
 		Endpoint:    "https://api.openai.com/v1/chat/completions",
 		Method:      "POST",
 	}
-	myMessage = Message{
-		Role: "system",
-	}
 	myData = Data{
 		Model:    MODEL,
-		Messages: []Message{myMessage},
+		Messages: []Message{},
 	}
 )
 
@@ -94,14 +91,15 @@ func Prompt() string {
 
 // Send the prompt to the OpenAI API
 func SendPrompt(prompt string) {
-	request := myRequest
-	data := myData
-	data.Messages[0].Content = prompt
-	myDataJSON, err := json.Marshal(data)
-
-	req, err := http.NewRequest(request.Method, request.Endpoint, bytes.NewBuffer(myDataJSON))
-	req.Header.Set("Authorization", request.Bearer)
-	req.Header.Set("Content-Type", request.ContentType)
+	newMessage := Message{
+		Role:    "user",
+		Content: prompt,
+	}
+	myData.Messages = append(myData.Messages, newMessage)
+	myDataJSON, err := json.Marshal(myData)
+	req, err := http.NewRequest(myRequest.Method, myRequest.Endpoint, bytes.NewBuffer(myDataJSON))
+	req.Header.Set("Authorization", myRequest.Bearer)
+	req.Header.Set("Content-Type", myRequest.ContentType)
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
