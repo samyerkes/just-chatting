@@ -30,7 +30,7 @@ type Data struct {
 	Model    string    `json:"model"`
 }
 
-type ChatGPTResponse struct {
+type Response struct {
 	Id      string `json:"id"`
 	Object  string `json:"object"`
 	Created int    `json:"created"`
@@ -50,10 +50,6 @@ type ChatGPTResponse struct {
 	} `json:"choices"`
 }
 
-const (
-	MODEL = "gpt-3.5-turbo"
-)
-
 var (
 	myRequest = Request{
 		Bearer:      "Bearer " + os.Getenv("OPENAI_API_KEY"),
@@ -62,7 +58,7 @@ var (
 		Method:      "POST",
 	}
 	myData = Data{
-		Model:    MODEL,
+		Model:    "gpt-3.5-turbo",
 		Messages: []Message{},
 	}
 )
@@ -97,26 +93,42 @@ func SendPrompt(prompt string) {
 	}
 	myData.Messages = append(myData.Messages, newMessage)
 	myDataJSON, err := json.Marshal(myData)
-	req, err := http.NewRequest(myRequest.Method, myRequest.Endpoint, bytes.NewBuffer(myDataJSON))
-	req.Header.Set("Authorization", myRequest.Bearer)
-	req.Header.Set("Content-Type", myRequest.ContentType)
+	if err != nil {
+		log.Fatal(err)
+	}
+	headers := map[string]string{
+		"Authorization": myRequest.Bearer,
+		"Content-Type":  myRequest.ContentType,
+	}
+	response, err := MakeHttpRequest(myRequest.Method, myRequest.Endpoint, headers, myDataJSON)
+	if err != nil {
+		log.Fatal(err)
+	}
+	PrintResponse(response)
+}
+
+func MakeHttpRequest(method string, endpoint string, headers map[string]string, data []byte) (string, error) {
+	req, err := http.NewRequest(method, endpoint, bytes.NewBuffer(data))
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
-	PrintResponse(string([]byte(body)))
+	return string([]byte(body)), nil
 }
 
 // Print the response from the OpenAI API
 func PrintResponse(response string) {
-	myResponseMessage := ChatGPTResponse{}
+	myResponseMessage := Response{}
 	json.Unmarshal([]byte(response), &myResponseMessage)
 	for _, choice := range myResponseMessage.Choices {
 		fmt.Println("AI:", choice.Message.Content, "\n")
