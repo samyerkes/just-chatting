@@ -1,3 +1,3 @@
-module samyerkes.com/ai
+module samyerkes.com/just-chatting
 
 go 1.20
