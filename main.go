@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -25,7 +26,7 @@ var (
 )
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	p := tea.NewProgram(initialApp(), tea.WithAltScreen())
 	if err := p.Start(); err != nil {
 		fmt.Printf("could not start program: %v", err)
 		os.Exit(1)
@@ -37,32 +38,33 @@ type qa struct {
 	answer   string
 }
 
-type model struct {
+type app struct {
 	altscreen bool
 	qas       []qa
 	quitting  bool
 	textInput textinput.Model
+	viewport  viewport.Model
 }
 
-func initialModel() model {
+func initialApp() app {
 	ti := textinput.New()
 	ti.Placeholder = "Ask a question..."
 	ti.Focus()
 	ti.CharLimit = 156
 	ti.Width = 20
 
-	return model{
+	return app{
 		textInput: ti,
 		altscreen: true,
 		qas:       []qa{},
 	}
 }
 
-func (m model) Init() tea.Cmd {
+func (m app) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
@@ -88,14 +90,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.altscreen = !m.altscreen
 			return m, cmd
 
-		// The "up" and "k" keys move the cursor up
-		case "up", "k":
-			// something
-
-		// The "down" and "j" keys move the cursor down
-		case "down", "j":
-			// something
-
 		// The "enter" key and the spacebar (a literal space) toggle
 		// the selected state for the item that the cursor is pointing at.
 		case "enter":
@@ -106,7 +100,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			newQa.answer = response
 			m.qas = append(m.qas, newQa)
 			m.textInput.SetValue("")
-			// something
 		}
 	}
 
@@ -114,13 +107,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) View() string {
+func (m app) View() string {
 	if m.quitting {
 		return "Bye!\n"
 	}
 
 	// header
 	s := header("OpenAI GPT-3 Chatbot")
+	s += "\n"
+	// footer
+	s += help("Quit (ESC / CTRL+C) | Fullscreen (CTRL+F)\n")
 	s += "\n"
 
 	// Display the questions and answers
@@ -139,7 +135,5 @@ func (m model) View() string {
 	s += m.textInput.View()
 	s += "\n\n"
 
-	// footer
-	s += help("Quit (ESC / CTRL+C) | Fullscreen (CTRL+F)\n")
 	return s
 }
