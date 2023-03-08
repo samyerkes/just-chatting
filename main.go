@@ -1,45 +1,13 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"log"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
-
-type Request struct {
-	Bearer      string `json:"bearer"`
-	ContentType string `json:"content-type"`
-	Endpoint    string `json:"endpoint"`
-	Method      string `json:"method"`
-}
-
-type Message struct {
-	Content string `json:"content"`
-	Role    string `json:"role"`
-}
-
-type Data struct {
-	Messages []Message `json:"messages"`
-	Model    string    `json:"model"`
-}
-
-type Response struct {
-	Choices []struct {
-		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-		Index        int    `json:"index"`
-	} `json:"choices"`
-}
 
 var (
 	myRequest = Request{
@@ -52,76 +20,126 @@ var (
 		Model:    "gpt-3.5-turbo",
 		Messages: []Message{},
 	}
+	header = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Render
+	help   = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render
 )
 
 func main() {
-	fmt.Println("Started new chat session. Press Ctrl+C to stop.")
-	cancelChan := make(chan os.Signal, 1)
-	signal.Notify(cancelChan, syscall.SIGTERM, syscall.SIGINT)
-	go func() {
-		for {
-			question := Prompt()
-			SendPrompt(question)
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	if err := p.Start(); err != nil {
+		fmt.Printf("could not start program: %v", err)
+		os.Exit(1)
+	}
+}
+
+type qa struct {
+	question string
+	answer   string
+}
+
+type model struct {
+	altscreen bool
+	qas       []qa
+	quitting  bool
+	textInput textinput.Model
+}
+
+func initialModel() model {
+	ti := textinput.New()
+	ti.Placeholder = "Ask a question..."
+	ti.Focus()
+	ti.CharLimit = 156
+	ti.Width = 20
+
+	return model{
+		textInput: ti,
+		altscreen: true,
+		qas:       []qa{},
+	}
+}
+
+func (m model) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+
+	// Is it a key press?
+	case tea.KeyMsg:
+
+		// Cool, what was the actual key pressed?
+		switch msg.String() {
+
+		// These keys should exit the program.
+		case "ctrl+c", "esc", "tab":
+			m.quitting = true
+			return m, tea.Quit
+
+		case "ctrl+f":
+			var cmd tea.Cmd
+			if m.altscreen {
+				cmd = tea.ExitAltScreen
+			} else {
+				cmd = tea.EnterAltScreen
+			}
+			m.altscreen = !m.altscreen
+			return m, cmd
+
+		// The "up" and "k" keys move the cursor up
+		case "up", "k":
+			// something
+
+		// The "down" and "j" keys move the cursor down
+		case "down", "j":
+			// something
+
+		// The "enter" key and the spacebar (a literal space) toggle
+		// the selected state for the item that the cursor is pointing at.
+		case "enter":
+			newQa := qa{
+				question: m.textInput.Value(),
+			}
+			response := SendPrompt(m.textInput.Value())
+			newQa.answer = response
+			m.qas = append(m.qas, newQa)
+			m.textInput.SetValue("")
+			// something
 		}
-	}()
-	<-cancelChan
-	fmt.Println("\nChat has ended.")
+	}
+
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
 }
 
-// Ask the user for input
-func Prompt() string {
-	fmt.Print("YOU: ")
-	reader := bufio.NewReader(os.Stdin)
-	text, _ := reader.ReadString('\n')
-	return text
-}
+func (m model) View() string {
+	if m.quitting {
+		return "Bye!\n"
+	}
 
-// Send the prompt to the OpenAI API
-func SendPrompt(prompt string) {
-	newMessage := Message{
-		Role:    "user",
-		Content: prompt,
-	}
-	myData.Messages = append(myData.Messages, newMessage)
-	myDataJSON, err := json.Marshal(myData)
-	if err != nil {
-		log.Fatal(err)
-	}
-	headers := map[string]string{
-		"Authorization": myRequest.Bearer,
-		"Content-Type":  myRequest.ContentType,
-	}
-	response, err := MakeHttpRequest(myRequest.Method, myRequest.Endpoint, headers, myDataJSON)
-	if err != nil {
-		log.Fatal(err)
-	}
-	PrintResponse(response)
-}
+	// header
+	s := header("OpenAI GPT-3 Chatbot")
+	s += "\n"
 
-func MakeHttpRequest(method string, endpoint string, headers map[string]string, data []byte) (string, error) {
-	req, err := http.NewRequest(method, endpoint, bytes.NewBuffer(data))
-	for k, v := range headers {
-		req.Header.Set(k, v)
+	// Display the questions and answers
+	for _, qa := range m.qas {
+		if len(qa.question) > 1 {
+			s += "\n"
+		}
+		s += fmt.Sprintf("YOU: %s", qa.question)
+		s += fmt.Sprintf("\nAI: %s", qa.answer)
 	}
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
+	if len(m.qas) > 0 {
+		s += "\n\n"
 	}
-	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	return string([]byte(body)), nil
-}
+	// body
+	s += m.textInput.View()
+	s += "\n\n"
 
-// Print the response from the OpenAI API
-func PrintResponse(response string) {
-	myResponseMessage := Response{}
-	json.Unmarshal([]byte(response), &myResponseMessage)
-	for _, choice := range myResponseMessage.Choices {
-		fmt.Println("AI:", choice.Message.Content, "\n")
-	}
+	// footer
+	s += help("Quit (ESC / CTRL+C) | Fullscreen (CTRL+F)\n")
+	return s
 }
