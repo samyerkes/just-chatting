@@ -53,10 +53,13 @@ type app struct {
 	height    int
 	qas       []qa
 	quitting  bool
+	ready     bool
 	textInput textinput.Model
 	viewport  viewport.Model
 	width     int
 }
+
+const useHighPerformanceRenderer = false
 
 func initialApp() app {
 	ti := textinput.New()
@@ -64,9 +67,10 @@ func initialApp() app {
 	ti.Focus()
 
 	return app{
-		textInput: ti,
 		altscreen: true,
 		qas:       []qa{},
+		ready:     false,
+		textInput: ti,
 	}
 }
 
@@ -75,13 +79,37 @@ func (m app) Init() tea.Cmd {
 }
 
 func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+	var (
+		cmd  tea.Cmd
+		cmds []tea.Cmd
+	)
 
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if !m.ready {
+			// Since this program is using the full size of the viewport we
+			// need to wait until we've received the window dimensions before
+			// we can initialize the viewport. The initial dimensions come in
+			// quickly, though asynchronously, which is why we wait for them
+			// here.
+			m.viewport = viewport.New(msg.Width, msg.Height)
+			m.viewport.HighPerformanceRendering = useHighPerformanceRenderer
+			m.ready = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height
+		}
+
+		if useHighPerformanceRenderer {
+			// Render (or re-render) the whole viewport. Necessary both to
+			// initialize the viewport and when the window is resized.
+			//
+			// This is needed for high-performance rendering only.
+			cmds = append(cmds, viewport.Sync(m.viewport))
+		}
 
 	// Is it a key press?
 	case tea.KeyMsg:
@@ -108,7 +136,10 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	m.textInput, cmd = m.textInput.Update(msg)
-	return m, cmd
+	m.viewport, cmd = m.viewport.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m app) View() string {
