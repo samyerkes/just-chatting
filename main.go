@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -20,12 +21,22 @@ var (
 		Model:    "gpt-3.5-turbo",
 		Messages: []Message{},
 	}
-	header = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Render
-	help   = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render
+	green   = lipgloss.Color("36")
+	gray    = lipgloss.Color("8")
+	purple  = lipgloss.Color("12")
+	pink    = lipgloss.Color("201")
+	white   = lipgloss.Color("#ffffff")
+	header  = lipgloss.NewStyle().Bold(true).Foreground(green).Render
+	help    = lipgloss.NewStyle().Foreground(gray).Render
+	chat    = lipgloss.NewStyle().BorderForeground(green).BorderStyle(lipgloss.NormalBorder()).Padding(1).Width(90)
+	ai      = lipgloss.NewStyle().Bold(true).Foreground(purple)
+	aiText  = lipgloss.NewStyle().Foreground(white)
+	you     = lipgloss.NewStyle().Bold(true).Foreground(pink)
+	youText = lipgloss.NewStyle().Foreground(pink)
 )
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	p := tea.NewProgram(initialApp(), tea.WithAltScreen())
 	if err := p.Start(); err != nil {
 		fmt.Printf("could not start program: %v", err)
 		os.Exit(1)
@@ -33,39 +44,72 @@ func main() {
 }
 
 type qa struct {
-	question string
 	answer   string
+	question string
 }
 
-type model struct {
+type app struct {
 	altscreen bool
+	height    int
 	qas       []qa
 	quitting  bool
+	ready     bool
 	textInput textinput.Model
+	viewport  viewport.Model
+	width     int
 }
 
-func initialModel() model {
+const useHighPerformanceRenderer = false
+
+func initialApp() app {
 	ti := textinput.New()
 	ti.Placeholder = "Ask a question..."
 	ti.Focus()
-	ti.CharLimit = 156
-	ti.Width = 20
 
-	return model{
-		textInput: ti,
+	return app{
 		altscreen: true,
 		qas:       []qa{},
+		ready:     false,
+		textInput: ti,
 	}
 }
 
-func (m model) Init() tea.Cmd {
+func (m app) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		cmd  tea.Cmd
+		cmds []tea.Cmd
+	)
 
 	switch msg := msg.(type) {
+
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if !m.ready {
+			// Since this program is using the full size of the viewport we
+			// need to wait until we've received the window dimensions before
+			// we can initialize the viewport. The initial dimensions come in
+			// quickly, though asynchronously, which is why we wait for them
+			// here.
+			m.viewport = viewport.New(msg.Width, msg.Height)
+			m.viewport.HighPerformanceRendering = useHighPerformanceRenderer
+			m.ready = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height
+		}
+
+		if useHighPerformanceRenderer {
+			// Render (or re-render) the whole viewport. Necessary both to
+			// initialize the viewport and when the window is resized.
+			//
+			// This is needed for high-performance rendering only.
+			cmds = append(cmds, viewport.Sync(m.viewport))
+		}
 
 	// Is it a key press?
 	case tea.KeyMsg:
@@ -78,24 +122,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 
-		case "ctrl+f":
-			var cmd tea.Cmd
-			if m.altscreen {
-				cmd = tea.ExitAltScreen
-			} else {
-				cmd = tea.EnterAltScreen
-			}
-			m.altscreen = !m.altscreen
-			return m, cmd
-
-		// The "up" and "k" keys move the cursor up
-		case "up", "k":
-			// something
-
-		// The "down" and "j" keys move the cursor down
-		case "down", "j":
-			// something
-
 		// The "enter" key and the spacebar (a literal space) toggle
 		// the selected state for the item that the cursor is pointing at.
 		case "enter":
@@ -103,43 +129,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				question: m.textInput.Value(),
 			}
 			response := SendPrompt(m.textInput.Value())
-			newQa.answer = response
+			newQa.answer = aiText.Render(response)
 			m.qas = append(m.qas, newQa)
 			m.textInput.SetValue("")
-			// something
 		}
 	}
 
 	m.textInput, cmd = m.textInput.Update(msg)
-	return m, cmd
+	m.viewport, cmd = m.viewport.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
 }
 
-func (m model) View() string {
+func (m app) View() string {
 	if m.quitting {
 		return "Bye!\n"
 	}
 
-	// header
-	s := header("OpenAI GPT-3 Chatbot")
-	s += "\n"
-
+	var s string
 	// Display the questions and answers
 	for _, qa := range m.qas {
 		if len(qa.question) > 1 {
 			s += "\n"
 		}
-		s += fmt.Sprintf("YOU: %s", qa.question)
-		s += fmt.Sprintf("\nAI: %s", qa.answer)
+		s += you.Render("YOU:") + " " + youText.Render(qa.question) + "\n"
+		s += ai.Render("AI:") + " " + qa.answer
 	}
 	if len(m.qas) > 0 {
 		s += "\n\n"
 	}
 
-	// body
-	s += m.textInput.View()
-	s += "\n\n"
-
-	// footer
-	s += help("Quit (ESC / CTRL+C) | Fullscreen (CTRL+F)\n")
-	return s
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Top,
+		lipgloss.JoinVertical(
+			lipgloss.Left,
+			header("OpenAI GPT-3 Chatbot"),
+			chat.Render(s),
+			chat.Render(m.textInput.View()),
+			help("Quit (ESC / CTRL+C)"),
+		),
+	)
 }

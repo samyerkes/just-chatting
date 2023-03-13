@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 )
 
 type Request struct {
@@ -71,7 +70,7 @@ func SendPrompt(prompt string) string {
 	chatResponse := ""
 	json.Unmarshal([]byte(response), &myResponseMessage)
 	for _, choice := range myResponseMessage.Choices {
-		chatResponse += strings.Replace(choice.Message.Content, "\n", "", -1)
+		chatResponse += choice.Message.Content
 	}
 	return chatResponse
 }
