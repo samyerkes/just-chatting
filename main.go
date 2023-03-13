@@ -21,8 +21,17 @@ var (
 		Model:    "gpt-3.5-turbo",
 		Messages: []Message{},
 	}
-	header = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Render
-	help   = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render
+	green   = lipgloss.Color("36")
+	gray    = lipgloss.Color("8")
+	purple  = lipgloss.Color("12")
+	pink    = lipgloss.Color("201")
+	header  = lipgloss.NewStyle().Bold(true).Foreground(green).Render
+	help    = lipgloss.NewStyle().Foreground(gray).Render
+	chat    = lipgloss.NewStyle().BorderForeground(green).BorderStyle(lipgloss.NormalBorder()).Padding(1).Width(90)
+	ai      = lipgloss.NewStyle().Bold(true).Foreground(purple)
+	aiText  = lipgloss.NewStyle().Foreground(purple)
+	you     = lipgloss.NewStyle().Bold(true).Foreground(pink)
+	youText = lipgloss.NewStyle().Foreground(pink)
 )
 
 func main() {
@@ -34,24 +43,24 @@ func main() {
 }
 
 type qa struct {
-	question string
 	answer   string
+	question string
 }
 
 type app struct {
 	altscreen bool
+	height    int
 	qas       []qa
 	quitting  bool
 	textInput textinput.Model
 	viewport  viewport.Model
+	width     int
 }
 
 func initialApp() app {
 	ti := textinput.New()
 	ti.Placeholder = "Ask a question..."
 	ti.Focus()
-	ti.CharLimit = 156
-	ti.Width = 20
 
 	return app{
 		textInput: ti,
@@ -69,6 +78,10 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
 	// Is it a key press?
 	case tea.KeyMsg:
 
@@ -79,16 +92,6 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "esc", "tab":
 			m.quitting = true
 			return m, tea.Quit
-
-		case "ctrl+f":
-			var cmd tea.Cmd
-			if m.altscreen {
-				cmd = tea.ExitAltScreen
-			} else {
-				cmd = tea.EnterAltScreen
-			}
-			m.altscreen = !m.altscreen
-			return m, cmd
 
 		// The "enter" key and the spacebar (a literal space) toggle
 		// the selected state for the item that the cursor is pointing at.
@@ -112,28 +115,30 @@ func (m app) View() string {
 		return "Bye!\n"
 	}
 
-	// header
-	s := header("OpenAI GPT-3 Chatbot")
-	s += "\n"
-	// footer
-	s += help("Quit (ESC / CTRL+C) | Fullscreen (CTRL+F)\n")
-	s += "\n"
-
+	var s string
 	// Display the questions and answers
 	for _, qa := range m.qas {
 		if len(qa.question) > 1 {
 			s += "\n"
 		}
-		s += fmt.Sprintf("YOU: %s", qa.question)
-		s += fmt.Sprintf("\nAI: %s", qa.answer)
+		s += you.Render("YOU:") + " " + youText.Render(qa.question) + "\n"
+		s += ai.Render("AI:") + " " + aiText.Render(qa.answer)
 	}
 	if len(m.qas) > 0 {
 		s += "\n\n"
 	}
 
-	// body
-	s += m.textInput.View()
-	s += "\n\n"
-
-	return s
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Top,
+		lipgloss.JoinVertical(
+			lipgloss.Left,
+			header("OpenAI GPT-3 Chatbot"),
+			chat.Render(s),
+			chat.Render(m.textInput.View()),
+			help("Quit (ESC / CTRL+C)"),
+		),
+	)
 }
