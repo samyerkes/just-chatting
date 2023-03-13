@@ -25,11 +25,12 @@ var (
 	gray    = lipgloss.Color("8")
 	purple  = lipgloss.Color("12")
 	pink    = lipgloss.Color("201")
+	white   = lipgloss.Color("#ffffff")
 	header  = lipgloss.NewStyle().Bold(true).Foreground(green).Render
 	help    = lipgloss.NewStyle().Foreground(gray).Render
 	chat    = lipgloss.NewStyle().BorderForeground(green).BorderStyle(lipgloss.NormalBorder()).Padding(1).Width(90)
 	ai      = lipgloss.NewStyle().Bold(true).Foreground(purple)
-	aiText  = lipgloss.NewStyle().Foreground(purple)
+	aiText  = lipgloss.NewStyle().Foreground(white)
 	you     = lipgloss.NewStyle().Bold(true).Foreground(pink)
 	youText = lipgloss.NewStyle().Foreground(pink)
 )
@@ -100,7 +101,7 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				question: m.textInput.Value(),
 			}
 			response := SendPrompt(m.textInput.Value())
-			newQa.answer = response
+			newQa.answer = aiText.Render(response)
 			m.qas = append(m.qas, newQa)
 			m.textInput.SetValue("")
 		}
@@ -122,7 +123,7 @@ func (m app) View() string {
 			s += "\n"
 		}
 		s += you.Render("YOU:") + " " + youText.Render(qa.question) + "\n"
-		s += ai.Render("AI:") + " " + aiText.Render(qa.answer)
+		s += ai.Render("AI:") + " " + qa.answer
 	}
 	if len(m.qas) > 0 {
 		s += "\n\n"
